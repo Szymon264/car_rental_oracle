@@ -1,0 +1,102 @@
+@startuml
+title Wypożyczalnia samochodów – diagram przypadków użycia
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #FFF4E0
+  BorderColor #E07A1F
+}
+
+actor "Klient" as K
+actor "Pracownik\n(CLERK)" as P
+actor "Kierownik oddziału\n(MANAGER)" as M
+actor "Administrator\n(ADMIN)" as A
+
+M --|> P
+A --|> M
+
+rectangle "System wypożyczalni (Oracle + APEX)" {
+
+  package "Rezerwacje i wypożyczenia (PKG_WYPOZYCZENIA)" {
+    usecase "UC01 Przeglądaj dostępne auta\n(oddział, termin, kategoria)" as UC01
+    usecase "UC02 Oblicz koszt wypożyczenia" as UC02
+    usecase "UC03 Złóż rezerwację" as UC03
+    usecase "UC04 Anuluj rezerwację" as UC04
+    usecase "UC05 Przeglądaj historię wypożyczeń" as UC05
+    usecase "UC06 Wydaj samochód klientowi" as UC06
+    usecase "UC07 Przyjmij zwrot samochodu" as UC07
+    usecase "UC08 Zarejestruj płatność / kaucję" as UC08
+
+    usecase "Sprawdź dostępność auta\nw terminie" as INC_DOST
+    usecase "Zastosuj kod rabatowy" as EXT_RABAT
+    usecase "Zweryfikuj klienta\n(wiek, prawo jazdy)" as INC_WERYF
+    usecase "Rozlicz wypożyczenie" as INC_ROZL
+    usecase "Nalicz dopłatę\nza spóźnienie" as EXT_SPOZN
+    usecase "Zgłoś szkodę" as EXT_SZKODA
+    usecase "Nalicz karę za szkodę\n(potrącenie z kaucji + dopłata)" as EXT_KARA
+    usecase "Rozlicz / zwróć kaucję" as INC_KAUCJA
+  }
+
+  package "Flota i raporty (PKG_FLOTA)" {
+    usecase "UC09 Skieruj auto do serwisu" as UC09
+    usecase "UC10 Zakończ serwis" as UC10
+    usecase "UC11 Przenieś auto do innego oddziału" as UC11
+    usecase "UC12 Lista aut do przeglądu" as UC12
+    usecase "UC13 Raport przychodów oddziału" as UC13
+    usecase "UC14 Raport obłożenia floty" as UC14
+  }
+
+  package "Administracja (CRUD w APEX)" {
+    usecase "UC15 Zarządzaj flotą\n(dodaj / wycofaj auto)" as UC15
+    usecase "UC16 Zarządzaj cennikiem\ni promocjami" as UC16
+    usecase "UC17 Zarządzaj pracownikami\ni oddziałami" as UC17
+    usecase "UC18 Zarejestruj klienta" as UC18
+  }
+}
+
+' --- Klient ---
+K --> UC01
+K --> UC02
+K --> UC03
+K --> UC04
+K --> UC05
+
+' --- Pracownik ---
+P --> UC03
+P --> UC04
+P --> UC06
+P --> UC07
+P --> UC08
+P --> UC18
+
+' --- Kierownik ---
+M --> UC09
+M --> UC10
+M --> UC11
+M --> UC12
+M --> UC13
+M --> UC14
+
+' --- Administrator ---
+A --> UC15
+A --> UC16
+A --> UC17
+
+' --- Zależności include / extend ---
+UC03 ..> INC_DOST  : <<include>>
+UC03 ..> UC02      : <<include>>
+UC02 <.. EXT_RABAT : <<extend>>
+UC06 ..> INC_WERYF : <<include>>
+UC06 ..> UC08      : <<include>>\n(kaucja)
+UC07 ..> INC_ROZL  : <<include>>
+INC_ROZL ..> UC08  : <<include>>
+INC_ROZL <.. EXT_SPOZN  : <<extend>>
+UC07 <.. EXT_SZKODA     : <<extend>>
+EXT_SZKODA ..> UC09     : <<include>>\n(gdy wymaga naprawy)
+EXT_SZKODA <.. EXT_KARA : <<extend>>\n(szkoda z winy klienta)
+EXT_KARA ..> UC08       : <<include>>\n(DAMAGE_FEE)
+INC_ROZL ..> INC_KAUCJA : <<include>>
+INC_KAUCJA <.. EXT_KARA : <<extend>>\n(kaucja pokrywa karę)
+
+@enduml
