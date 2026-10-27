@@ -10,6 +10,8 @@ w Oracle (3NF), dwa pakiety PL/SQL oraz webowy interfejs w Oracle APEX.
 | `sql/01_schemat_i_dane.sql` | 14 tabel, ograniczenia, indeksy, dane przykładowe |
 | `sql/02_pkg_wypozyczenia.sql` | tabela `ERROR_LOG`, typy obiektowe i kolekcje, pakiet `PKG_WYPOZYCZENIA` |
 | `sql/03_testy_pkg_wypozyczenia.sql` | testy pakietu (kończą się `ROLLBACK`) |
+| `sql/04_pkg_flota.sql` | typy raportowe, pakiet `PKG_FLOTA` |
+| `sql/05_testy_pkg_flota.sql` | testy pakietu (kończą się `ROLLBACK`) |
 
 Każdy skrypt można uruchamiać ponownie – sam usuwa poprzednią wersję obiektów.
 
@@ -41,7 +43,22 @@ Cykl życia rezerwacji: `RESERVED → ACTIVE → COMPLETED` lub `RESERVED → CA
 
 ### PKG_FLOTA (serwis, flota, raporty)
 
-W przygotowaniu.
+| | Nazwa | Przypadek użycia |
+|---|---|---|
+| F1 | `f_km_do_przegladu` | km do przeglądu okresowego |
+| F2 | `f_auta_do_przegladu` | UC12 – lista aut do przeglądu (kolekcja `T_PRZEGLAD_TAB`) |
+| F3 | `f_raport_oddzialu` | UC13 – wynik finansowy oddziału (obiekt `T_RAPORT_ODDZIALU` z metodami) |
+| F4 | `f_oblozenie_floty` | UC14 – obłożenie aut (kolekcja `T_OBLOZENIE_TAB`) |
+| F5 | `f_koszt_serwisu` | koszty serwisu pojazdu |
+| P1 | `p_skieruj_do_serwisu` | UC09 |
+| P2 | `p_zakoncz_serwis` | UC10 |
+| P3 | `p_przenies_auto` | UC11 |
+| P4 | `p_dodaj_pojazd` | UC15 |
+| P5 | `p_wycofaj_pojazd` | UC15 |
+| P6 | `p_drukuj_raport_floty` | raport zbiorczy (zagnieżdżone kursory) |
+
+Raporty przypisują przychody do oddziału, w którym auto jest **obecnie**
+(rezerwacja nie przechowuje oddziału wydania) – świadome uproszczenie.
 
 ## Reguły biznesowe
 
@@ -58,9 +75,25 @@ W przygotowaniu.
 
 ## Obsługa błędów
 
-Własne wyjątki `-20001…-20009` z komunikatami po polsku (wyświetlane w APEX),
+Własne wyjątki z komunikatami po polsku (wyświetlane w APEX),
 `SAVEPOINT` w każdej procedurze oraz dziennik `ERROR_LOG` zapisywany w transakcji
 autonomicznej.
+
+| Kod | Wyjątek | Znaczenie |
+|---|---|---|
+| -20001 | `e_auto_niedostepne` | auto zajęte w terminie |
+| -20002 | `e_zle_daty` | nieprawidłowe daty / okres |
+| -20003 | `e_zly_kod_rabatowy` | kod nie istnieje lub nie obowiązuje |
+| -20004 | `e_klient_nieuprawniony` | wiek < 21 lub prawo jazdy < 1 rok |
+| -20005 | `e_zly_status` | zły status rezerwacji |
+| -20006 | `e_nie_znaleziono` | brak rekordu |
+| -20007 | `e_zly_przebieg` | przebieg mniejszy niż przy wydaniu |
+| -20008 | `e_platnosc` | zła metoda płatności / karta |
+| -20009 | `e_zle_dane_szkody` | nieprawidłowe dane szkody |
+| -20010 | `e_zly_status_auta` | operacja niedozwolona w obecnym statusie auta |
+| -20011 | `e_serwis` | serwis już otwarty / już zakończony |
+| -20012 | `e_zle_dane` | nieprawidłowe dane (VIN, koszt, duplikat) |
+| -20013 | `e_auto_zarezerwowane` | auto ma przyszłe rezerwacje |
 
 ## Dokumentacja
 
