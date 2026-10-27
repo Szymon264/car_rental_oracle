@@ -153,8 +153,11 @@ autonomicznej.
 
 ## Dokumentacja
 
+- `docs/erd.svg`, `docs/erd.png` – diagram ERD (wszystkie kolumny, PK/FK, 17 relacji)
 - `docs/use_cases_wypozyczalnia.puml` – diagram przypadków użycia (PlantUML,
   do otwarcia np. na planttext.com)
+- `tools/gen_erd.py` – generator ERD ze skryptu schematu:
+  `python3 tools/gen_erd.py sql/01_schemat_i_dane.sql docs/erd.dot && dot -Tsvg docs/erd.dot -o docs/erd.svg`
 
 ## Źródło
 
