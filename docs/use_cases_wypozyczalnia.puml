@@ -45,13 +45,32 @@ rectangle "System wypożyczalni (Oracle + APEX)" {
     usecase "UC12 Lista aut do przeglądu" as UC12
     usecase "UC13 Raport przychodów oddziału" as UC13
     usecase "UC14 Raport obłożenia floty" as UC14
+    usecase "UC15 Zarządzaj flotą\n(dodaj / wycofaj auto)" as UC15
+  }
+
+  package "Konta i klienci (PKG_KLIENCI)" {
+    usecase "UC18 Zarejestruj konto klienta" as UC18
+    usecase "UC19 Zaloguj się" as UC19
+    usecase "UC20 Zmień hasło" as UC20
+    usecase "UC21 Zarządzaj kartami płatniczymi" as UC21
+    usecase "UC22 Sprawdź profil\ni poziom lojalności" as UC22
+    usecase "UC23 Anonimizuj dane klienta\n(RODO)" as UC23
+    usecase "Zablokuj konto po\n5 nieudanych próbach" as EXT_BLOKADA
+    usecase "Zweryfikuj numer karty\n(algorytm Luhna)" as INC_LUHN
+  }
+
+  package "Analityka i raporty (PKG_ANALITYKA)" {
+    usecase "UC24 Dashboard KPI" as UC24
+    usecase "UC25 Rankingi modeli\ni klientów" as UC25
+    usecase "UC26 Przychód miesięczny\ni rozkłady (wykresy)" as UC26
+    usecase "UC27 Raport miesięczny /\nporównanie oddziałów" as UC27
+    usecase "UC28 Wykryj anomalie" as UC28
+    usecase "UC29 Eksport raportu (JSON)" as UC29
   }
 
   package "Administracja (CRUD w APEX)" {
-    usecase "UC15 Zarządzaj flotą\n(dodaj / wycofaj auto)" as UC15
     usecase "UC16 Zarządzaj cennikiem\ni promocjami" as UC16
     usecase "UC17 Zarządzaj pracownikami\ni oddziałami" as UC17
-    usecase "UC18 Zarejestruj klienta" as UC18
   }
 }
 
@@ -61,6 +80,11 @@ K --> UC02
 K --> UC03
 K --> UC04
 K --> UC05
+K --> UC18
+K --> UC19
+K --> UC20
+K --> UC21
+K --> UC22
 
 ' --- Pracownik ---
 P --> UC03
@@ -69,6 +93,8 @@ P --> UC06
 P --> UC07
 P --> UC08
 P --> UC18
+P --> UC19
+P --> UC20
 
 ' --- Kierownik ---
 M --> UC09
@@ -77,11 +103,18 @@ M --> UC11
 M --> UC12
 M --> UC13
 M --> UC14
+M --> UC24
+M --> UC25
+M --> UC26
+M --> UC27
+M --> UC28
+M --> UC29
 
 ' --- Administrator ---
 A --> UC15
 A --> UC16
 A --> UC17
+A --> UC23
 
 ' --- Zależności include / extend ---
 UC03 ..> INC_DOST  : <<include>>
@@ -98,5 +131,8 @@ EXT_SZKODA <.. EXT_KARA : <<extend>>\n(szkoda z winy klienta)
 EXT_KARA ..> UC08       : <<include>>\n(DAMAGE_FEE)
 INC_ROZL ..> INC_KAUCJA : <<include>>
 INC_KAUCJA <.. EXT_KARA : <<extend>>\n(kaucja pokrywa karę)
+UC19 <.. EXT_BLOKADA    : <<extend>>
+UC21 ..> INC_LUHN       : <<include>>
+UC27 ..> UC13           : <<include>>
 
 @enduml

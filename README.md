@@ -1,7 +1,7 @@
 # Wypożyczalnia samochodów – Oracle PL/SQL + APEX
 
 Projekt zaliczeniowy z aplikacji bazodanowych: baza danych wypożyczalni samochodów
-w Oracle (3NF), dwa pakiety PL/SQL oraz webowy interfejs w Oracle APEX.
+w Oracle (3NF), cztery pakiety PL/SQL oraz webowy interfejs w Oracle APEX.
 
 ## Kolejność uruchamiania (SQL Developer, F5 – Run Script)
 
@@ -12,6 +12,10 @@ w Oracle (3NF), dwa pakiety PL/SQL oraz webowy interfejs w Oracle APEX.
 | `sql/03_testy_pkg_wypozyczenia.sql` | testy pakietu (kończą się `ROLLBACK`) |
 | `sql/04_pkg_flota.sql` | typy raportowe, pakiet `PKG_FLOTA` |
 | `sql/05_testy_pkg_flota.sql` | testy pakietu (kończą się `ROLLBACK`) |
+| `sql/06_pkg_klienci.sql` | tabela `LOGIN_LOG`, pakiet `PKG_KLIENCI`, hasła demonstracyjne |
+| `sql/07_testy_pkg_klienci.sql` | testy pakietu (kończą się `ROLLBACK`) |
+| `sql/08_pkg_analityka.sql` | typy pod wykresy, pakiet `PKG_ANALITYKA` |
+| `sql/09_testy_pkg_analityka.sql` | testy pakietu (tylko odczyt) |
 
 Każdy skrypt można uruchamiać ponownie – sam usuwa poprzednią wersję obiektów.
 
@@ -20,7 +24,7 @@ Każdy skrypt można uruchamiać ponownie – sam usuwa poprzednią wersję obie
 - **Słowniki:** `MAKES`, `MAINTENANCE_TYPES`, `PROMOTIONS`
 - **Główne:** `USERS` (nadklasa) → `EMPLOYEES`, `CUSTOMERS`; `BRANCHES`, `VEHICLE_TYPES`, `VEHICLES`
 - **Transakcyjne:** `BOOKINGS`, `PAYMENT_DETAILS`, `TRANSACTIONS`, `DAMAGES`, `MAINTENANCE`
-- **Techniczne:** `ERROR_LOG`
+- **Techniczne:** `ERROR_LOG`, `LOGIN_LOG`
 
 Cykl życia rezerwacji: `RESERVED → ACTIVE → COMPLETED` lub `RESERVED → CANCELLED`.
 
@@ -60,6 +64,51 @@ Cykl życia rezerwacji: `RESERVED → ACTIVE → COMPLETED` lub `RESERVED → CA
 Raporty przypisują przychody do oddziału, w którym auto jest **obecnie**
 (rezerwacja nie przechowuje oddziału wydania) – świadome uproszczenie.
 
+### PKG_KLIENCI (konta, logowanie, karty, lojalność, RODO)
+
+| | Nazwa | Przypadek użycia |
+|---|---|---|
+| F1 | `f_zaloguj` | UC19 – funkcja uwierzytelniania APEX, blokada po 5 błędach / 15 min |
+| F2 | `f_rola` | role do schematów autoryzacji APEX |
+| F3 | `f_id_uzytkownika` | ID zalogowanego użytkownika |
+| F4 | `f_poziom_lojalnosci` | UC22 – STANDARD / SREBRNY / ZLOTY / PLATYNOWY |
+| F5 | `f_rabat_lojalnosciowy` | UC22 – 0 / 5 / 10 / 15 % |
+| F6 | `f_profil_klienta` | UC22 – obiekt `T_PROFIL_KLIENTA` z metodą |
+| F7 | `f_karty_wygasajace` | kolekcja `T_KARTA_TAB` |
+| P1 | `p_zarejestruj_klienta` | UC18 |
+| P2 | `p_ustaw_haslo` | reset hasła |
+| P3 | `p_zmien_haslo` | UC20 |
+| P4 | `p_dodaj_karte` | UC21 – algorytm Luhna, wykrycie typu karty |
+| P5 | `p_usun_karte` | UC21 – ORA-02292 zamieniony na komunikat |
+| P6 | `p_anonimizuj_klienta` | UC23 – kursor `FOR UPDATE` + `WHERE CURRENT OF` |
+
+Hasła: sól + SHA-256 (`STANDARD_HASH`). Z karty zapisywane są tylko typ i 4 ostatnie cyfry.
+
+### PKG_ANALITYKA (statystyki pod wykresy APEX)
+
+| | Nazwa | Przypadek użycia |
+|---|---|---|
+| F1 | `f_ranking_modeli` | UC25 – `RANK()`, `RATIO_TO_REPORT()` |
+| F2 | `f_top_klienci` | UC25 – `DENSE_RANK()` + poziom z `PKG_KLIENCI` |
+| F3 | `f_przychod_miesieczny` | UC26 – `LAG()`, suma narastająca, generator miesięcy |
+| F4 | `f_statystyki_dashboard` | UC24 – obiekt `T_STATYSTYKI` z metodą |
+| F5 | `f_rozklad` | UC26 – dynamiczny SQL + `SYS_REFCURSOR` |
+| P1 | `p_raport_miesieczny` | UC27 |
+| P2 | `p_porownaj_oddzialy` | UC27 – korzysta z `PKG_FLOTA` |
+| P3 | `p_raport_json` | UC29 – `JSON_OBJECT` / `JSON_ARRAYAGG` |
+| P4 | `p_wykryj_anomalie` | UC28 |
+
+## Konta demonstracyjne (APEX)
+
+Hasło wszystkich kont z danych przykładowych: `Haslo123!`
+
+| E-mail | Rola |
+|---|---|
+| tomasz.wojcik@wypozyczalnia.pl | ADMIN |
+| anna.kowalska@wypozyczalnia.pl | MANAGER |
+| piotr.nowak@wypozyczalnia.pl | CLERK |
+| michal.kaminski@gmail.com | CUSTOMER |
+
 ## Reguły biznesowe
 
 1. Klient: min. 21 lat, prawo jazdy od min. 1 roku.
@@ -94,6 +143,13 @@ autonomicznej.
 | -20011 | `e_serwis` | serwis już otwarty / już zakończony |
 | -20012 | `e_zle_dane` | nieprawidłowe dane (VIN, koszt, duplikat) |
 | -20013 | `e_auto_zarezerwowane` | auto ma przyszłe rezerwacje |
+| -20020 | `e_zle_dane` (KLIENCI) | błędne dane formularza |
+| -20021 | `e_duplikat` | e-mail lub prawo jazdy już zarejestrowane |
+| -20022 | `e_haslo` | hasło za słabe / błędne obecne hasło |
+| -20023 | `e_konto_zablokowane` | zbyt wiele nieudanych logowań |
+| -20024 | `e_karta` | zła karta (Luhn, ważność, duplikat, użyta) |
+| -20025 | `e_klient_aktywny` | klient ma aktywne rezerwacje |
+| -20030 | `e_zly_parametr` | zły parametr raportu |
 
 ## Dokumentacja
 
