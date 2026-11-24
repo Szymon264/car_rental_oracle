@@ -16,6 +16,7 @@ w Oracle (3NF), cztery pakiety PL/SQL oraz webowy interfejs w Oracle APEX.
 | `sql/07_testy_pkg_klienci.sql` | testy pakietu (kończą się `ROLLBACK`) |
 | `sql/08_pkg_analityka.sql` | typy pod wykresy, pakiet `PKG_ANALITYKA` |
 | `sql/09_testy_pkg_analityka.sql` | testy pakietu (tylko odczyt) |
+| `sql/10_apex_obsluga_bledow.sql` | funkcja obsługi błędów APEX (tylko w bazie z APEX) |
 
 Każdy skrypt można uruchamiać ponownie – sam usuwa poprzednią wersję obiektów.
 
@@ -103,6 +104,9 @@ Hasła: sól + SHA-256 (`STANDARD_HASH`). Z karty zapisywane są tylko typ i 4 o
 ## Konta demonstracyjne (APEX)
 
 Hasło wszystkich kont z danych przykładowych: `Haslo123!`
+
+Aplikacja działa na apex.oracle.com (workspace `wypozyczalnia`). Na nowym workspace
+uruchom w SQL Workshop → SQL Scripts (kodowanie UTF-8): 01, 02, 04, 06, 08, 10.
 
 | E-mail | Rola |
 |---|---|
