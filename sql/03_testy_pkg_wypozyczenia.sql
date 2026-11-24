@@ -110,20 +110,87 @@ END;
 
 
 /* ---------------------------------------------------------------------
+   TEST 4A – F6 / F7 wskaźnik zaufania (na danych wyjściowych)
+   Oczekiwane:
+     klient 5:  46 OBNIZONY  kaucja 750  (70 +3 za czysty zwrot -7 za spóźnienie -20 za szkodę MEDIUM)
+     klienci 6, 7, 8: 73 STANDARD 500 (jeden czysty zwrot; szkoda klienta 7 nie z jego winy)
+     klienci 9–12: 70 STANDARD 500 (brak zakończonych wypożyczeń)
+     nowy klient z dwiema szkodami HIGH: 0 ZABLOKOWANY, rezerwacja = błąd -20014
+   --------------------------------------------------------------------- */
+SELECT z.customer_id, z.klient,
+       z.zauf.wynik AS wynik, z.zauf.poziom AS poziom, z.zauf.kaucja AS kaucja,
+       z.zauf.wypozyczen AS wypozyczen, z.zauf.bez_zastrzezen AS bez_zastrzezen,
+       z.zauf.spoznien AS spoznien, z.zauf.szkod_z_winy AS szkody
+  FROM (SELECT c.user_id AS customer_id, u.first_name || ' ' || u.last_name AS klient,
+               pkg_wypozyczenia.f_zaufanie_klienta(c.user_id) AS zauf
+          FROM customers c JOIN users u ON u.user_id = c.user_id) z
+ ORDER BY z.customer_id;
+
+DECLARE
+  l_klient  users.user_id%TYPE;
+  l_rez     bookings.booking_id%TYPE;
+  l_z       t_zaufanie;
+BEGIN
+  DBMS_OUTPUT.PUT_LINE('=== TEST 4A: wskaźnik zaufania ===');
+  l_z := pkg_wypozyczenia.f_zaufanie_klienta(5);
+  DBMS_OUTPUT.PUT_LINE('Klient 5: ' || l_z.opis());
+  DBMS_OUTPUT.PUT_LINE('Kaucja klienta 5: ' || pkg_wypozyczenia.f_kaucja_klienta(5) || ' zł');
+
+  -- klient, który dwa razy oddał auto z poważną szkodą
+  INSERT INTO users (first_name, last_name, street, city, region, zip_code,
+                     date_of_birth, email, phone_number, password_hash)
+  VALUES ('Test', 'Ryzykowny', 'ul. Testowa 2', 'Rzeszów', 'podkarpackie', '35-002',
+          DATE '1990-01-01', 'test.ryzykowny@test.pl', '+48699000222', 'HASH')
+  RETURNING user_id INTO l_klient;
+
+  INSERT INTO customers (user_id, drivers_license_no, license_issue_date)
+  VALUES (l_klient, 'TEST-0002', DATE '2010-01-01');
+
+  FOR i IN 1 .. 2 LOOP
+    INSERT INTO bookings (customer_id, vehicle_id, employee_id, booking_status, start_date,
+                          planned_end_date, actual_return_date, start_mileage, end_mileage,
+                          total_cost, created_at)
+    VALUES (l_klient, 9, 4, 'COMPLETED', ADD_MONTHS(TRUNC(SYSDATE), -i * 2) - 3,
+            ADD_MONTHS(TRUNC(SYSDATE), -i * 2), ADD_MONTHS(TRUNC(SYSDATE), -i * 2),
+            30000, 30500, 477, ADD_MONTHS(TRUNC(SYSDATE), -i * 2) - 10)
+    RETURNING booking_id INTO l_rez;
+
+    INSERT INTO damages (booking_id, description, severity, repair_cost, charged_to_customer, reported_date)
+    VALUES (l_rez, 'Test: rozbity przód', 'HIGH', 4000, 'Y', ADD_MONTHS(TRUNC(SYSDATE), -i * 2));
+  END LOOP;
+
+  l_z := pkg_wypozyczenia.f_zaufanie_klienta(l_klient);
+  DBMS_OUTPUT.PUT_LINE('Klient ryzykowny: ' || l_z.opis());
+
+  BEGIN
+    pkg_wypozyczenia.p_utworz_rezerwacje(l_klient, 4, 2, TRUNC(SYSDATE) + 1, TRUNC(SYSDATE) + 3,
+                                         o_booking_id => l_rez);
+    DBMS_OUTPUT.PUT_LINE('BŁĄD TESTU – rezerwacja nie powinna powstać');
+  EXCEPTION
+    WHEN pkg_wypozyczenia.e_niskie_zaufanie THEN
+      DBMS_OUTPUT.PUT_LINE('OK, oczekiwany błąd: ' || SQLERRM);
+  END;
+END;
+/
+
+
+/* ---------------------------------------------------------------------
    TEST 5 – pełny cykl: P1 rezerwacja -> P3 wydanie -> P4 zwrot z poważną szkodą
-   Auto 1 (Corolla, 159 zł/dzień), klient 5, pracownik 2, karta 1.
+   Auto 1 (Corolla, 159 zł/dzień), klient 5 (zaufanie 46 – OBNIZONY), pracownik 2, karta 1.
    Oczekiwane:
      - druga rezerwacja tego auta w tym terminie = błąd -20001
-     - po wydaniu: status ACTIVE, auto RENTED, kaucja 500
+     - po wydaniu: status ACTIVE, auto RENTED, kaucja 750 (500 x 1,5 – podwyższona)
      - zwrot 1 dzień po terminie: 3 dni x 159 = 477 + spóźnienie 159 = 636.00
-     - kara 1500 (tylko szkoda z winy klienta) > kaucja 500 -> DAMAGE_FEE 1000, brak REFUND
+     - kara 1500 (tylko szkoda z winy klienta) > kaucja 750 -> DAMAGE_FEE 750, brak REFUND
      - auto w statusie MAINTENANCE, przebieg 45800, nowy wpis w MAINTENANCE
+     - zaufanie klienta 5 po tym zwrocie: 4/100 ZABLOKOWANY (-7 spóźnienie, -35 szkoda HIGH)
    --------------------------------------------------------------------- */
 DECLARE
   l_rez     bookings.booking_id%TYPE;
   l_rez2    bookings.booking_id%TYPE;
   l_koszt   t_koszt;
-  l_status  VARCHAR2(20);
+  l_status  VARCHAR2(200);
+  l_z       t_zaufanie;
 BEGIN
   DBMS_OUTPUT.PUT_LINE('=== TEST 5: rezerwacja -> wydanie -> zwrot ze szkodą ===');
 
@@ -177,6 +244,10 @@ BEGIN
   FOR m IN (SELECT description FROM maintenance WHERE vehicle_id = 1 AND end_date IS NULL) LOOP
     DBMS_OUTPUT.PUT_LINE('  serwis: ' || m.description);
   END LOOP;
+
+  -- zwrot ma datę za 4 dni, więc wskaźnik liczymy na ten dzień
+  l_z := pkg_wypozyczenia.f_zaufanie_klienta(5, TRUNC(SYSDATE) + 4);
+  DBMS_OUTPUT.PUT_LINE('Klient 5 po zwrocie: ' || l_z.opis());
 END;
 /
 

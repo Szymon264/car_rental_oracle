@@ -9,16 +9,18 @@
      3. Specyfikacja pakietu
      4. Ciało pakietu
 
-   Funkcje (5):
+   Funkcje (7):
      F1 f_czy_dostepne             – czy auto jest wolne w terminie (1/0)
      F2 f_oblicz_koszt             – kalkulacja kosztu -> obiekt T_KOSZT
      F3 f_dostepne_auta            – lista wolnych aut -> kolekcja T_AUTO_DOSTEPNE_TAB
      F4 f_czy_klient_uprawniony    – wiek >= 21 i prawo jazdy >= 1 rok (1/0)
      F5 f_suma_wplat               – suma wpłat dla rezerwacji (wg typu lub netto)
+     F6 f_zaufanie_klienta         – wskaźnik zaufania 0–100 z historii -> obiekt T_ZAUFANIE
+     F7 f_kaucja_klienta           – kaucja zależna od wskaźnika zaufania
    Procedury (5):
-     P1 p_utworz_rezerwacje        – UC03
+     P1 p_utworz_rezerwacje        – UC03 (+ blokada przy zbyt niskim zaufaniu)
      P2 p_anuluj_rezerwacje        – UC04 (+ zwrot wpłaconej kaucji)
-     P3 p_wydaj_auto               – UC06 (+ weryfikacja klienta, pobranie kaucji)
+     P3 p_wydaj_auto               – UC06 (+ weryfikacja klienta, kaucja wg zaufania)
      P4 p_przyjmij_zwrot           – UC07 (+ rozliczenie, spóźnienie, szkody, kaucja)
      P5 p_drukuj_historie_klienta  – UC05 (kursor jawny OPEN/FETCH/CLOSE)
 
@@ -27,7 +29,19 @@
      -20002 nieprawidłowe daty        -20007 nieprawidłowy przebieg
      -20003 zły kod rabatowy          -20008 błąd płatności
      -20004 klient nieuprawniony      -20009 nieprawidłowe dane szkody
-     -20005 zły status rezerwacji
+     -20005 zły status rezerwacji     -20014 zbyt niski wskaźnik zaufania
+
+   Wskaźnik zaufania (liczony na bieżąco z historii – nigdzie nie jest
+   zapisywany, więc nie łamie 3NF i nie trzeba go synchronizować):
+     start 70 pkt; okno: zwroty z ostatnich 24 miesięcy
+     +3   za każde wypożyczenie bez zastrzeżeń (łącznie max +30)
+     -5   za zwrot po terminie i -2 za każdy dzień spóźnienia (max 10 dni)
+     -10 / -20 / -35 za szkodę z winy klienta LOW / MEDIUM / HIGH
+     wynik obcinany do 0–100
+   Poziomy i kaucja (bazowo 500 zł):
+     85–100 WYSOKI x0,6 = 300 zł | 60–84 STANDARD x1,0 = 500 zł
+     40–59  OBNIZONY x1,5 = 750 zł | 20–39 NISKI x2,5 = 1250 zł
+     0–19   ZABLOKOWANY – brak możliwości wynajmu
    ===================================================================== */
 
 
@@ -93,7 +107,7 @@ BEGIN
   -- najpierw kolekcje, potem typy elementów
   FOR t IN (SELECT type_name FROM user_types
              WHERE type_name IN ('T_AUTO_DOSTEPNE_TAB','T_SZKODA_TAB',
-                                 'T_AUTO_DOSTEPNE','T_SZKODA','T_KOSZT')
+                                 'T_AUTO_DOSTEPNE','T_SZKODA','T_KOSZT','T_ZAUFANIE')
              ORDER BY CASE WHEN type_name LIKE '%TAB' THEN 0 ELSE 1 END)
   LOOP
     EXECUTE IMMEDIATE 'DROP TYPE ' || t.type_name || ' FORCE';
@@ -166,6 +180,38 @@ CREATE OR REPLACE TYPE t_szkoda AS OBJECT (
 CREATE OR REPLACE TYPE t_szkoda_tab AS TABLE OF t_szkoda;
 /
 
+-- Wskaźnik zaufania klienta (wynik F6) – obiekt z metodą
+CREATE OR REPLACE TYPE t_zaufanie AS OBJECT (
+  customer_id       NUMBER,
+  wynik             NUMBER(3),            -- 0–100
+  poziom            VARCHAR2(12 CHAR),    -- WYSOKI / STANDARD / OBNIZONY / NISKI / ZABLOKOWANY
+  mnoznik_kaucji    NUMBER(3,1),          -- NULL = wynajem zablokowany
+  kaucja            NUMBER(10,2),         -- NULL = wynajem zablokowany
+  wypozyczen        NUMBER,               -- zwroty w oknie 24 miesięcy
+  bez_zastrzezen    NUMBER,
+  spoznien          NUMBER,
+  dni_spoznienia    NUMBER,
+  szkod_z_winy      NUMBER,
+  MEMBER FUNCTION opis RETURN VARCHAR2
+);
+/
+SHOW ERRORS
+
+CREATE OR REPLACE TYPE BODY t_zaufanie AS
+  MEMBER FUNCTION opis RETURN VARCHAR2 IS
+  BEGIN
+    RETURN 'Zaufanie ' || wynik || '/100 (' || poziom || ')'
+        || CASE WHEN kaucja IS NULL THEN ' – wynajem zablokowany'
+                ELSE ' – kaucja ' || TO_CHAR(kaucja, 'FM9999990.00') || ' zł' END
+        || '; wypożyczeń: ' || wypozyczen
+        || ', bez zastrzeżeń: ' || bez_zastrzezen
+        || ', spóźnień: ' || spoznien
+        || ', szkód z winy klienta: ' || szkod_z_winy;
+  END opis;
+END;
+/
+SHOW ERRORS
+
 
 /* =====================================================================
    3. SPECYFIKACJA PAKIETU
@@ -173,9 +219,15 @@ CREATE OR REPLACE TYPE t_szkoda_tab AS TABLE OF t_szkoda;
 CREATE OR REPLACE PACKAGE pkg_wypozyczenia AS
 
   -- Stałe reguł biznesowych
-  c_kaucja         CONSTANT NUMBER := 500;
+  c_kaucja         CONSTANT NUMBER := 500;    -- kaucja bazowa (mnożona wg zaufania)
   c_min_wiek       CONSTANT NUMBER := 21;
   c_min_staz_lat   CONSTANT NUMBER := 1;
+
+  -- Wskaźnik zaufania
+  c_zaufanie_start     CONSTANT NUMBER := 70;
+  c_zaufanie_okres_mc  CONSTANT NUMBER := 24;
+  c_zaufanie_bonus     CONSTANT NUMBER := 3;     -- za wypożyczenie bez zastrzeżeń
+  c_zaufanie_max_bonus CONSTANT NUMBER := 30;
 
   -- Wyjątki nazwane (można je łapać po nazwie: WHEN pkg_wypozyczenia.e_auto_niedostepne)
   e_auto_niedostepne      EXCEPTION;  PRAGMA EXCEPTION_INIT(e_auto_niedostepne,     -20001);
@@ -187,6 +239,7 @@ CREATE OR REPLACE PACKAGE pkg_wypozyczenia AS
   e_zly_przebieg          EXCEPTION;  PRAGMA EXCEPTION_INIT(e_zly_przebieg,         -20007);
   e_platnosc              EXCEPTION;  PRAGMA EXCEPTION_INIT(e_platnosc,             -20008);
   e_zle_dane_szkody       EXCEPTION;  PRAGMA EXCEPTION_INIT(e_zle_dane_szkody,      -20009);
+  e_niskie_zaufanie       EXCEPTION;  PRAGMA EXCEPTION_INIT(e_niskie_zaufanie,      -20014);
 
   /* ---------------- FUNKCJE ---------------- */
 
@@ -226,6 +279,17 @@ CREATE OR REPLACE PACKAGE pkg_wypozyczenia AS
   FUNCTION f_suma_wplat (
     p_booking_id  IN bookings.booking_id%TYPE,
     p_typ         IN transactions.transaction_type%TYPE DEFAULT NULL
+  ) RETURN NUMBER;
+
+  -- F6: wskaźnik zaufania klienta wyliczony z historii zwrotów
+  FUNCTION f_zaufanie_klienta (
+    p_customer_id  IN customers.user_id%TYPE,
+    p_na_dzien     IN DATE DEFAULT SYSDATE
+  ) RETURN t_zaufanie;
+
+  -- F7: kaucja, jaką klient zapłaci przy wydaniu auta (NULL = wynajem zablokowany)
+  FUNCTION f_kaucja_klienta (
+    p_customer_id  IN customers.user_id%TYPE
   ) RETURN NUMBER;
 
   /* ---------------- PROCEDURY ---------------- */
@@ -586,6 +650,105 @@ CREATE OR REPLACE PACKAGE BODY pkg_wypozyczenia AS
     RETURN l_suma;
   END f_suma_wplat;
 
+  -- F6: kursor z parametrami po zakończonych wypożyczeniach klienta
+  FUNCTION f_zaufanie_klienta (
+    p_customer_id  IN customers.user_id%TYPE,
+    p_na_dzien     IN DATE DEFAULT SYSDATE
+  ) RETURN t_zaufanie IS
+    CURSOR c_historia (cp_klient NUMBER, cp_od DATE, cp_do DATE) IS
+      SELECT b.booking_id,
+             GREATEST(0, TRUNC(b.actual_return_date) - TRUNC(b.planned_end_date)) AS dni_spoznienia,
+             COUNT(d.damage_id) AS szkody,
+             NVL(SUM(CASE d.severity
+                       WHEN 'LOW'    THEN 10
+                       WHEN 'MEDIUM' THEN 20
+                       WHEN 'HIGH'   THEN 35
+                     END), 0) AS punkty_kary
+        FROM bookings b
+        LEFT JOIN damages d
+               ON d.booking_id = b.booking_id
+              AND d.charged_to_customer = 'Y'
+       WHERE b.customer_id    = cp_klient
+         AND b.booking_status = 'COMPLETED'
+         AND TRUNC(b.actual_return_date) >  cp_od
+         AND TRUNC(b.actual_return_date) <= cp_do
+       GROUP BY b.booking_id, b.actual_return_date, b.planned_end_date;
+
+    l_ile        NUMBER;
+    l_bonus      NUMBER := 0;
+    l_kary       NUMBER := 0;
+    l_wypoz      NUMBER := 0;
+    l_czyste     NUMBER := 0;
+    l_spoznien   NUMBER := 0;
+    l_dni_spoz   NUMBER := 0;
+    l_szkody     NUMBER := 0;
+    l_wynik      NUMBER;
+    l_poziom     VARCHAR2(12);
+    l_mnoznik    NUMBER;
+  BEGIN
+    SELECT COUNT(*) INTO l_ile FROM customers WHERE user_id = p_customer_id;
+    IF l_ile = 0 THEN
+      RAISE_APPLICATION_ERROR(-20006, 'Nie znaleziono klienta o ID ' || p_customer_id || '.');
+    END IF;
+
+    FOR r IN c_historia(p_customer_id,
+                        ADD_MONTHS(TRUNC(p_na_dzien), -c_zaufanie_okres_mc),
+                        TRUNC(p_na_dzien))
+    LOOP
+      l_wypoz := l_wypoz + 1;
+
+      IF r.dni_spoznienia = 0 AND r.szkody = 0 THEN
+        l_czyste := l_czyste + 1;
+        l_bonus  := l_bonus + c_zaufanie_bonus;
+      END IF;
+
+      IF r.dni_spoznienia > 0 THEN
+        l_spoznien := l_spoznien + 1;
+        l_dni_spoz := l_dni_spoz + r.dni_spoznienia;
+        l_kary     := l_kary + 5 + 2 * LEAST(r.dni_spoznienia, 10);
+      END IF;
+
+      l_szkody := l_szkody + r.szkody;
+      l_kary   := l_kary + r.punkty_kary;
+    END LOOP;
+
+    l_wynik := GREATEST(0, LEAST(100,
+                 c_zaufanie_start + LEAST(l_bonus, c_zaufanie_max_bonus) - l_kary));
+
+    IF    l_wynik >= 85 THEN l_poziom := 'WYSOKI';      l_mnoznik := 0.6;
+    ELSIF l_wynik >= 60 THEN l_poziom := 'STANDARD';    l_mnoznik := 1.0;
+    ELSIF l_wynik >= 40 THEN l_poziom := 'OBNIZONY';    l_mnoznik := 1.5;
+    ELSIF l_wynik >= 20 THEN l_poziom := 'NISKI';       l_mnoznik := 2.5;
+    ELSE                     l_poziom := 'ZABLOKOWANY'; l_mnoznik := NULL;
+    END IF;
+
+    RETURN t_zaufanie(p_customer_id, l_wynik, l_poziom, l_mnoznik,
+                      ROUND(c_kaucja * l_mnoznik, 2),
+                      l_wypoz, l_czyste, l_spoznien, l_dni_spoz, l_szkody);
+  END f_zaufanie_klienta;
+
+  -- F7
+  FUNCTION f_kaucja_klienta (
+    p_customer_id  IN customers.user_id%TYPE
+  ) RETURN NUMBER IS
+    l_z  t_zaufanie;
+  BEGIN
+    l_z := f_zaufanie_klienta(p_customer_id);
+    RETURN l_z.kaucja;
+  END f_kaucja_klienta;
+
+  -- Prywatna: blokada wynajmu przy zbyt niskim wskaźniku zaufania
+  PROCEDURE sprawdz_zaufanie (p_customer_id IN customers.user_id%TYPE) IS
+    l_z  t_zaufanie;
+  BEGIN
+    l_z := f_zaufanie_klienta(p_customer_id);
+    IF l_z.kaucja IS NULL THEN
+      RAISE_APPLICATION_ERROR(-20014,
+        'Wskaźnik zaufania klienta wynosi ' || l_z.wynik || '/100 (' || l_z.poziom
+        || ') – wynajem niemożliwy z powodu wcześniejszych szkód lub spóźnień.');
+    END IF;
+  END sprawdz_zaufanie;
+
 
   /* =================== PROCEDURY PUBLICZNE =================== */
 
@@ -634,6 +797,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_wypozyczenia AS
         'Klient nie spełnia wymagań: min. ' || c_min_wiek || ' lat i prawo jazdy od min. '
         || c_min_staz_lat || ' roku.');
     END IF;
+
+    sprawdz_zaufanie(p_customer_id);
 
     IF f_czy_dostepne(p_vehicle_id, p_od, p_do) = 0 THEN
       RAISE_APPLICATION_ERROR(-20001,
@@ -763,10 +928,12 @@ CREATE OR REPLACE PACKAGE BODY pkg_wypozyczenia AS
         'Pojazd ID ' || l_b.vehicle_id || ' nie może zostać wydany (status: ' || l_status || ').');
     END IF;
 
+    sprawdz_zaufanie(l_b.customer_id);
     sprawdz_platnosc(l_b.customer_id, p_metoda, p_karta_id);
 
-    -- kaucja: dopłata do pełnej kwoty (część mogła zostać wpłacona przy rezerwacji)
-    l_do_zaplaty := c_kaucja - f_suma_wplat(p_booking_id, 'DEPOSIT');
+    -- kaucja zależna od wskaźnika zaufania: dopłata do pełnej kwoty
+    -- (część mogła zostać wpłacona przy rezerwacji)
+    l_do_zaplaty := f_kaucja_klienta(l_b.customer_id) - f_suma_wplat(p_booking_id, 'DEPOSIT');
     dodaj_transakcje(p_booking_id, p_karta_id, l_do_zaplaty, p_metoda, 'DEPOSIT');
 
     UPDATE bookings

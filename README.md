@@ -39,9 +39,11 @@ Cykl życia rezerwacji: `RESERVED → ACTIVE → COMPLETED` lub `RESERVED → CA
 | F3 | `f_dostepne_auta` | UC01 – lista wolnych aut (kolekcja `T_AUTO_DOSTEPNE_TAB`) |
 | F4 | `f_czy_klient_uprawniony` | weryfikacja wieku i stażu prawa jazdy |
 | F5 | `f_suma_wplat` | suma wpłat / saldo rezerwacji |
-| P1 | `p_utworz_rezerwacje` | UC03 |
+| F6 | `f_zaufanie_klienta` | UC30 – wskaźnik zaufania 0–100 (obiekt `T_ZAUFANIE`) |
+| F7 | `f_kaucja_klienta` | UC30 – kaucja zależna od zaufania |
+| P1 | `p_utworz_rezerwacje` | UC03 (blokada przy zaufaniu < 20) |
 | P2 | `p_anuluj_rezerwacje` | UC04 |
-| P3 | `p_wydaj_auto` | UC06 |
+| P3 | `p_wydaj_auto` | UC06 (kaucja wg zaufania) |
 | P4 | `p_przyjmij_zwrot` | UC07 (szkody jako kolekcja `T_SZKODA_TAB`) |
 | P5 | `p_drukuj_historie_klienta` | UC05 |
 
@@ -115,7 +117,19 @@ Hasło wszystkich kont z danych przykładowych: `Haslo123!`
 2. Auto nie może mieć nakładających się rezerwacji ani być w serwisie / wycofane.
 3. Kod rabatowy musi obowiązywać w dniu rozpoczęcia wynajmu.
 4. Koszt = dni × stawka − rabat; każdy dzień spóźnienia według pełnej stawki.
-5. Przy wydaniu pobierana jest kaucja 500 zł.
+5. Przy wydaniu pobierana jest kaucja zależna od **wskaźnika zaufania** klienta
+   (bazowo 500 zł). Wskaźnik jest liczony na bieżąco z historii zwrotów z ostatnich
+   24 miesięcy – nie jest nigdzie zapisywany, więc nie łamie 3NF:
+   start 70 pkt; +3 za zwrot bez zastrzeżeń (max +30); −5 za spóźnienie i −2 za każdy
+   dzień (max 10); −10 / −20 / −35 za szkodę z winy klienta LOW / MEDIUM / HIGH.
+
+   | Wynik | Poziom | Kaucja |
+   |---|---|---|
+   | 85–100 | WYSOKI | 300 zł (×0,6) |
+   | 60–84 | STANDARD | 500 zł |
+   | 40–59 | OBNIZONY | 750 zł (×1,5) |
+   | 20–39 | NISKI | 1250 zł (×2,5) |
+   | 0–19 | ZABLOKOWANY | wynajem niemożliwy |
 6. Anulować można tylko rezerwację `RESERVED` (wpłaty są zwracane).
 7. Kara za szkodę z winy klienta = koszt naprawy: najpierw potrącana z kaucji,
    nadwyżka jako `DAMAGE_FEE`, niewykorzystana kaucja jako `REFUND`.
@@ -143,6 +157,7 @@ autonomicznej.
 | -20011 | `e_serwis` | serwis już otwarty / już zakończony |
 | -20012 | `e_zle_dane` | nieprawidłowe dane (VIN, koszt, duplikat) |
 | -20013 | `e_auto_zarezerwowane` | auto ma przyszłe rezerwacje |
+| -20014 | `e_niskie_zaufanie` | wskaźnik zaufania klienta < 20 |
 | -20020 | `e_zle_dane` (KLIENCI) | błędne dane formularza |
 | -20021 | `e_duplikat` | e-mail lub prawo jazdy już zarejestrowane |
 | -20022 | `e_haslo` | hasło za słabe / błędne obecne hasło |

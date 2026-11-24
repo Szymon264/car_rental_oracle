@@ -31,6 +31,7 @@ rectangle "System wypożyczalni (Oracle + APEX)" {
     usecase "Sprawdź dostępność auta\nw terminie" as INC_DOST
     usecase "Zastosuj kod rabatowy" as EXT_RABAT
     usecase "Zweryfikuj klienta\n(wiek, prawo jazdy)" as INC_WERYF
+    usecase "UC30 Oblicz wskaźnik zaufania\ni kaucję" as UC30
     usecase "Rozlicz wypożyczenie" as INC_ROZL
     usecase "Nalicz dopłatę\nza spóźnienie" as EXT_SPOZN
     usecase "Zgłoś szkodę" as EXT_SZKODA
@@ -80,6 +81,7 @@ K --> UC02
 K --> UC03
 K --> UC04
 K --> UC05
+K --> UC30
 K --> UC18
 K --> UC19
 K --> UC20
@@ -121,6 +123,8 @@ UC03 ..> INC_DOST  : <<include>>
 UC03 ..> UC02      : <<include>>
 UC02 <.. EXT_RABAT : <<extend>>
 UC06 ..> INC_WERYF : <<include>>
+UC06 ..> UC30      : <<include>>\n(wysokość kaucji)
+UC03 ..> UC30      : <<include>>\n(blokada < 20 pkt)
 UC06 ..> UC08      : <<include>>\n(kaucja)
 UC07 ..> INC_ROZL  : <<include>>
 INC_ROZL ..> UC08  : <<include>>
