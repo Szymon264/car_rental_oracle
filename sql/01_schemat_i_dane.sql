@@ -389,16 +389,21 @@ INSERT INTO vehicles VALUES (10, 1, 5, 'RZ 3RAV4', 'JTMW43FV0PD000010', 'Szary',
 
 -- BOOKINGS
 -- (id, klient, auto, pracownik, promocja, status, start, plan. koniec, faktyczny zwrot, km start, km koniec, koszt)
+-- rezerwacja 1: 4 dni x 159
 INSERT INTO bookings (booking_id, customer_id, vehicle_id, employee_id, promotion_id, booking_status, start_date, planned_end_date, actual_return_date, start_mileage, end_mileage, total_cost, created_at)
-VALUES (1, 5, 1, 2, NULL, 'COMPLETED', DATE '2026-07-01', DATE '2026-07-05', DATE '2026-07-05', 43800, 44350, 636.00, DATE '2026-06-20');   -- 4 dni x 159
+VALUES (1, 5, 1, 2, NULL, 'COMPLETED', DATE '2026-07-01', DATE '2026-07-05', DATE '2026-07-05', 43800, 44350, 636.00, DATE '2026-06-20');
+-- rezerwacja 2: 7 x 299 - 20%
 INSERT INTO bookings (booking_id, customer_id, vehicle_id, employee_id, promotion_id, booking_status, start_date, planned_end_date, actual_return_date, start_mileage, end_mileage, total_cost, created_at)
-VALUES (2, 6, 4, 3, 3,    'COMPLETED', DATE '2026-07-10', DATE '2026-07-17', DATE '2026-07-17', 11200, 12500, 1674.40, DATE '2026-07-01');  -- 7 x 299 - 20%
+VALUES (2, 6, 4, 3, 3,    'COMPLETED', DATE '2026-07-10', DATE '2026-07-17', DATE '2026-07-17', 11200, 12500, 1674.40, DATE '2026-07-01');
+-- rezerwacja 3: 3 x 259
 INSERT INTO bookings (booking_id, customer_id, vehicle_id, employee_id, promotion_id, booking_status, start_date, planned_end_date, actual_return_date, start_mileage, end_mileage, total_cost, created_at)
-VALUES (3, 7, 8, 4, NULL, 'COMPLETED', DATE '2026-08-03', DATE '2026-08-06', DATE '2026-08-06', 101500, 102400, 777.00, DATE '2026-07-28'); -- 3 x 259
+VALUES (3, 7, 8, 4, NULL, 'COMPLETED', DATE '2026-08-03', DATE '2026-08-06', DATE '2026-08-06', 101500, 102400, 777.00, DATE '2026-07-28');
+-- rezerwacja 4: 5 x 149 - 20%
 INSERT INTO bookings (booking_id, customer_id, vehicle_id, employee_id, promotion_id, booking_status, start_date, planned_end_date, actual_return_date, start_mileage, end_mileage, total_cost, created_at)
-VALUES (4, 8, 6, 3, 3,    'COMPLETED', DATE '2026-08-20', DATE '2026-08-25', DATE '2026-08-25', 60300, 61200, 596.00, DATE '2026-08-10');   -- 5 x 149 - 20%
+VALUES (4, 8, 6, 3, 3,    'COMPLETED', DATE '2026-08-20', DATE '2026-08-25', DATE '2026-08-25', 60300, 61200, 596.00, DATE '2026-08-10');
+-- rezerwacja 5: zwrot 1 dzień po terminie: 4 x 249
 INSERT INTO bookings (booking_id, customer_id, vehicle_id, employee_id, promotion_id, booking_status, start_date, planned_end_date, actual_return_date, start_mileage, end_mileage, total_cost, created_at)
-VALUES (5, 5, 5, 3, NULL, 'COMPLETED', DATE '2026-09-12', DATE '2026-09-15', DATE '2026-09-16', 26800, 27300, 996.00, DATE '2026-09-05');   -- zwrot 1 dzień po terminie: 4 x 249
+VALUES (5, 5, 5, 3, NULL, 'COMPLETED', DATE '2026-09-12', DATE '2026-09-15', DATE '2026-09-16', 26800, 27300, 996.00, DATE '2026-09-05');
 INSERT INTO bookings (booking_id, customer_id, vehicle_id, employee_id, promotion_id, booking_status, start_date, planned_end_date, actual_return_date, start_mileage, end_mileage, total_cost, created_at)
 VALUES (6, 9, 2, 2, 1,    'ACTIVE',    DATE '2026-10-24', DATE '2026-10-31', NULL, 30150, NULL, NULL, DATE '2026-10-18');
 INSERT INTO bookings (booking_id, customer_id, vehicle_id, employee_id, promotion_id, booking_status, start_date, planned_end_date, actual_return_date, start_mileage, end_mileage, total_cost, created_at)
